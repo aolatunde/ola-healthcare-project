@@ -4,6 +4,7 @@ import plotly.express as px
 from deltalake import DeltaTable
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
 
 st.set_page_config(
@@ -13,7 +14,7 @@ st.set_page_config(
 
 st.title("Healthcare Staffing & Quality Dashboard")
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
 
 
 def get_secret(name):
@@ -64,19 +65,24 @@ if AWS_SESSION_TOKEN:
 
 
 def build_storage_options():
-    return {
-        "region": AWS_REGION,
-        "aws_region": AWS_REGION,
+    options = {
         "AWS_REGION": AWS_REGION,
         "AWS_DEFAULT_REGION": AWS_REGION,
-        "aws_access_key_id": AWS_ACCESS_KEY_ID,
-        "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
-        "aws_session_token": AWS_SESSION_TOKEN or "",
-        "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
-        "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
-        "AWS_SESSION_TOKEN": AWS_SESSION_TOKEN or "",
         "AWS_EC2_METADATA_DISABLED": "true"
     }
+
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        options.update({
+            "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+            "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+        })
+
+    if AWS_SESSION_TOKEN:
+        options.update({
+            "AWS_SESSION_TOKEN": AWS_SESSION_TOKEN,
+        })
+
+    return options
 
 
 missing_paths = [
