@@ -47,42 +47,43 @@ STAFFING_PATH = get_config("STAFFING_PATH")
 QUALITY_PATH = get_config("QUALITY_PATH")
 CORR_PATH = get_config("CORR_PATH")
 
-AWS_ACCESS_KEY_ID = get_config("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
-AWS_SESSION_TOKEN = get_config("AWS_SESSION_TOKEN")
-AWS_REGION = get_config("AWS_REGION") or get_config("AWS_DEFAULT_REGION") or "us-east-1"
+import os
 
 os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
+
+AWS_ACCESS_KEY_ID = get_config("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = get_config("AWS_REGION") or get_config("AWS_DEFAULT_REGION") or "us-east-1"
+
+if AWS_ACCESS_KEY_ID:
+    os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
+
+if AWS_SECRET_ACCESS_KEY:
+    os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
+
 os.environ["AWS_REGION"] = AWS_REGION
 os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
 
-if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-    os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
-    os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
 
-if AWS_SESSION_TOKEN:
-    os.environ["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
-
+st.write("AWS key loaded:", bool(AWS_ACCESS_KEY_ID))
+st.write("AWS secret loaded:", bool(AWS_SECRET_ACCESS_KEY))
+st.write("AWS region:", AWS_REGION)
+st.write("Staffing path:", STAFFING_PATH)
 
 def build_storage_options():
-    options = {
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        st.error("AWS credentials are not loaded. Check Streamlit Cloud secrets.")
+        st.stop()
+
+    return {
+        "aws_access_key_id": AWS_ACCESS_KEY_ID,
+        "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+        "region": AWS_REGION,
         "AWS_REGION": AWS_REGION,
         "AWS_DEFAULT_REGION": AWS_REGION,
-        "AWS_EC2_METADATA_DISABLED": "true"
+        "AWS_EC2_METADATA_DISABLED": "true",
+        "allow_http": "false"
     }
-
-    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-        options.update({
-            "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
-            "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
-        })
-
-    if AWS_SESSION_TOKEN:
-        options.update({
-            "AWS_SESSION_TOKEN": AWS_SESSION_TOKEN,
-        })
-
-    return options
 
 
 missing_paths = [
