@@ -51,38 +51,32 @@ AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
 AWS_SESSION_TOKEN = get_config("AWS_SESSION_TOKEN")
 AWS_REGION = get_config("AWS_REGION") or get_config("AWS_DEFAULT_REGION") or "us-east-1"
 
+os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
+os.environ["AWS_REGION"] = AWS_REGION
+os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
+
 if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
     os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
-    os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
-    os.environ["AWS_REGION"] = AWS_REGION
 
 if AWS_SESSION_TOKEN:
     os.environ["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
 
 
 def build_storage_options():
-    options = {
-        "region": AWS_REGION or "us-east-1",
-        "AWS_REGION": AWS_REGION or "us-east-1",
-        "AWS_DEFAULT_REGION": AWS_REGION or "us-east-1",
-        "aws_region": AWS_REGION or "us-east-1",
-        "AWS_EC2_METADATA_DISABLED": "true",
+    return {
+        "region": AWS_REGION,
+        "aws_region": AWS_REGION,
+        "AWS_REGION": AWS_REGION,
+        "AWS_DEFAULT_REGION": AWS_REGION,
+        "aws_access_key_id": AWS_ACCESS_KEY_ID,
+        "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+        "aws_session_token": AWS_SESSION_TOKEN or "",
+        "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+        "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+        "AWS_SESSION_TOKEN": AWS_SESSION_TOKEN or "",
+        "AWS_EC2_METADATA_DISABLED": "true"
     }
-
-    if AWS_ACCESS_KEY_ID:
-        options["aws_access_key_id"] = AWS_ACCESS_KEY_ID
-        options["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
-
-    if AWS_SECRET_ACCESS_KEY:
-        options["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
-        options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
-
-    if AWS_SESSION_TOKEN:
-        options["aws_session_token"] = AWS_SESSION_TOKEN
-        options["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
-
-    return options
 
 
 missing_paths = [
