@@ -15,8 +15,32 @@ st.title("Healthcare Staffing & Quality Dashboard")
 
 load_dotenv()
 
+
+def get_secret(name):
+    try:
+        return st.secrets[name]
+    except Exception:
+        return None
+
+
 def get_config(name):
-    return os.getenv(name) or st.secrets.get(name)
+    return os.getenv(name) or get_secret(name)
+
+
+def has_columns(df, columns):
+    return all(column in df.columns for column in columns)
+
+
+def format_mean(df, column, fmt):
+    if column not in df.columns:
+        return "N/A"
+
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    if values.empty:
+        return "N/A"
+
+    return format(values.mean(), fmt)
+
 
 STAFFING_PATH = get_config("STAFFING_PATH")
 QUALITY_PATH = get_config("QUALITY_PATH")
@@ -24,17 +48,81 @@ CORR_PATH = get_config("CORR_PATH")
 
 AWS_ACCESS_KEY_ID = get_config("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
-AWS_DEFAULT_REGION = get_config("AWS_DEFAULT_REGION") or "us-east-1"
+AWS_SESSION_TOKEN = get_config("AWS_SESSION_TOKEN")
+AWS_REGION = get_config("AWS_REGION") or get_config("AWS_DEFAULT_REGION") or "us-east-1"
 
 if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
     os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
-    os.environ["AWS_DEFAULT_REGION"] = AWS_DEFAULT_REGION
+    os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
+    os.environ["AWS_REGION"] = AWS_REGION
+
+if AWS_SESSION_TOKEN:
+    os.environ["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
 
 
-@st.cache_data
-def load_delta(path):
-    return DeltaTable(path).to_pandas()
+def build_storage_options():
+    options = {}
+
+    if AWS_ACCESS_KEY_ID:
+        options["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
+    if AWS_SECRET_ACCESS_KEY:
+        options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
+    if AWS_SESSION_TOKEN:
+        options["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
+    if AWS_REGION:
+        options["AWS_REGION"] = AWS_REGION
+        options["AWS_DEFAULT_REGION"] = AWS_REGION
+
+    return options if options else None
+
+
+missing_paths = [
+    name
+    for name, value in {
+        "STAFFING_PATH": STAFFING_PATH,
+        "QUALITY_PATH": QUALITY_PATH,
+        "CORR_PATH": CORR_PATH,
+    }.items()
+    if not value
+]
+
+if missing_paths:
+    st.error("Missing required data path configuration.")
+    st.write(
+        "Add these values to Streamlit secrets or environment variables before "
+        "deploying the app."
+    )
+    st.code(
+        "\n".join(
+            [
+                "STAFFING_PATH = \"s3://your-bucket/gold/staffing_daily/\"",
+                "QUALITY_PATH = \"s3://your-bucket/gold/quality_summary/\"",
+                "CORR_PATH = \"s3://your-bucket/gold/staffing_quality_correlation/\"",
+                "AWS_REGION = \"us-east-1\"",
+            ]
+        ),
+        language="toml",
+    )
+    st.stop()
+
+
+@st.cache_data(show_spinner="Loading Delta table...")
+def load_delta(path, storage_options=None):
+    if not path:
+        st.error("Missing Delta table path. Check Streamlit secrets or .env configuration.")
+        st.stop()
+
+    try:
+        if path.startswith("s3://") and storage_options:
+            return DeltaTable(path, storage_options=storage_options).to_pandas()
+
+        return DeltaTable(path).to_pandas()
+
+    except Exception as e:
+        st.error(f"Failed to load Delta table from: {path}")
+        st.exception(e)
+        st.stop()
 
 
 def beautify_columns(df):
@@ -44,6 +132,11 @@ def beautify_columns(df):
         "provider_name": "Provider name",
         "state": "State",
         "city": "City",
+
+        "owner_type": "Owner type",
+        "primary_owner_name": "Primary owner name",
+        "staffing_risk_level": "Staffing risk level",
+        "occupancy_risk_level": "Occupancy risk level",
 
         "staffing_hprd": "Staffing HPRD",
         "avg_staffing_hprd": "Avg Staffing HPRD",
@@ -72,9 +165,20 @@ def to_numeric_if_exists(df, col_name):
     return df
 
 
-staffing_df = beautify_columns(load_delta(STAFFING_PATH))
-quality_df = beautify_columns(load_delta(QUALITY_PATH))
-corr_df = beautify_columns(load_delta(CORR_PATH))
+storage_options = build_storage_options()
+
+try:
+    staffing_df = beautify_columns(load_delta(STAFFING_PATH, storage_options))
+    quality_df = beautify_columns(load_delta(QUALITY_PATH, storage_options))
+    corr_df = beautify_columns(load_delta(CORR_PATH, storage_options))
+except Exception as exc:
+    st.error("Unable to load one or more Delta tables.")
+    st.write(
+        "Check that the configured paths exist and that the deployed app has "
+        "permission to read from the storage location."
+    )
+    st.exception(exc)
+    st.stop()
 
 
 if "Work date" in staffing_df.columns:
@@ -145,9 +249,9 @@ st.subheader("Executive Summary")
 
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Avg Staffing HPRD", f"{staffing_df['Staffing HPRD'].mean():.2f}")
-col2.metric("Avg Occupancy Rate", f"{staffing_df['Occupancy rate'].mean():.1%}")
-col3.metric("Avg RN Ratio", f"{staffing_df['RN ratio'].mean():.1%}")
+col1.metric("Avg Staffing HPRD", format_mean(staffing_df, "Staffing HPRD", ".2f"))
+col2.metric("Avg Occupancy Rate", format_mean(staffing_df, "Occupancy rate", ".1%"))
+col3.metric("Avg RN Ratio", format_mean(staffing_df, "RN ratio", ".1%"))
 
 high_risk = (
     quality_df[quality_df["Quality risk level"] == "HIGH_RISK"].shape[0]
@@ -159,7 +263,10 @@ col4.metric("High Risk Facilities", high_risk)
 
 st.subheader("Staffing Overview")
 
-trend_df = staffing_df.dropna(subset=["Work date", "Staffing HPRD"])
+if has_columns(staffing_df, ["Work date", "Staffing HPRD"]):
+    trend_df = staffing_df.dropna(subset=["Work date", "Staffing HPRD"])
+else:
+    trend_df = pd.DataFrame()
 
 if trend_df.empty:
     st.warning("No valid staffing trend data available.")
@@ -190,67 +297,73 @@ st.subheader("Facility Comparison")
 
 col1, col2 = st.columns(2)
 
-top_df = (
-    staffing_df
-    .groupby(["Provider name", "State"], as_index=False)
-    .agg({"Staffing HPRD": "mean"})
-    .sort_values("Staffing HPRD", ascending=False)
-    .head(10)
-)
+if has_columns(staffing_df, ["Provider name", "State", "Staffing HPRD"]):
+    top_df = (
+        staffing_df
+        .groupby(["Provider name", "State"], as_index=False)
+        .agg({"Staffing HPRD": "mean"})
+        .sort_values("Staffing HPRD", ascending=False)
+        .head(10)
+    )
 
-fig = px.bar(
-    top_df,
-    x="Provider name",
-    y="Staffing HPRD",
-    color="State",
-    title="Top 10 Facilities by Staffing",
-    labels={"Provider name": "Provider Name", "Staffing HPRD": "Staffing HPRD"}
-)
-col1.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+        top_df,
+        x="Provider name",
+        y="Staffing HPRD",
+        color="State",
+        title="Top 10 Facilities by Staffing",
+        labels={"Provider name": "Provider Name", "Staffing HPRD": "Staffing HPRD"}
+    )
+    col1.plotly_chart(fig, use_container_width=True)
 
-low_df = (
-    staffing_df
-    .groupby(["Provider name", "State"], as_index=False)
-    .agg({"Staffing HPRD": "mean"})
-    .sort_values("Staffing HPRD", ascending=True)
-    .head(10)
-)
+    low_df = (
+        staffing_df
+        .groupby(["Provider name", "State"], as_index=False)
+        .agg({"Staffing HPRD": "mean"})
+        .sort_values("Staffing HPRD", ascending=True)
+        .head(10)
+    )
 
-fig = px.bar(
-    low_df,
-    x="Provider name",
-    y="Staffing HPRD",
-    color="State",
-    title="Lowest 10 Facilities by Staffing",
-    labels={"Provider name": "Provider Name", "Staffing HPRD": "Staffing HPRD"}
-)
-col2.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+        low_df,
+        x="Provider name",
+        y="Staffing HPRD",
+        color="State",
+        title="Lowest 10 Facilities by Staffing",
+        labels={"Provider name": "Provider Name", "Staffing HPRD": "Staffing HPRD"}
+    )
+    col2.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Facility comparison data is not available.")
 
 
 st.subheader("Nurse Mix")
 
-mix_df = (
-    staffing_df
-    .groupby("State", as_index=False)
-    .agg({
-        "RN ratio": "mean",
-        "LPN ratio": "mean",
-        "CNA ratio": "mean"
-    })
-)
+if has_columns(staffing_df, ["State", "RN ratio", "LPN ratio", "CNA ratio"]):
+    mix_df = (
+        staffing_df
+        .groupby("State", as_index=False)
+        .agg({
+            "RN ratio": "mean",
+            "LPN ratio": "mean",
+            "CNA ratio": "mean"
+        })
+    )
 
-fig = px.bar(
-    mix_df,
-    x="State",
-    y=["RN ratio", "LPN ratio", "CNA ratio"],
-    barmode="stack",
-    title="Nurse Mix by State",
-    labels={
-        "value": "Average Ratio",
-        "variable": "Nurse Type"
-    }
-)
-st.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+        mix_df,
+        x="State",
+        y=["RN ratio", "LPN ratio", "CNA ratio"],
+        barmode="stack",
+        title="Nurse Mix by State",
+        labels={
+            "value": "Average Ratio",
+            "variable": "Nurse Type"
+        }
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Nurse mix data is not available.")
 
 
 st.subheader("Quality Overview")
@@ -265,7 +378,7 @@ if "Quality risk level" in quality_df.columns:
     )
     col1.plotly_chart(fig, use_container_width=True)
 
-if "Quality risk score" in quality_df.columns:
+if has_columns(quality_df, ["Provider name", "State", "Quality risk score"]):
     top_quality_risk = (
         quality_df
         .dropna(subset=["Quality risk score"])
@@ -292,24 +405,35 @@ if "Quality risk score" in quality_df.columns:
 
 st.subheader("Staffing vs Quality Correlation")
 
-corr_plot_df = corr_df.dropna(subset=["Avg Staffing HPRD", "Quality risk score"])
+if has_columns(corr_df, ["Avg Staffing HPRD", "Quality risk score"]):
+    corr_plot_df = corr_df.dropna(subset=["Avg Staffing HPRD", "Quality risk score"])
+else:
+    corr_plot_df = pd.DataFrame()
 
 if corr_plot_df.empty:
     st.warning("No correlation data available.")
 else:
-    fig = px.scatter(
-        corr_plot_df,
-        x="Avg Staffing HPRD",
-        y="Quality risk score",
-        color="Correlation category",
-        size="Avg Occupancy rate",
-        hover_data=["Provider name", "State"],
-        title="Staffing vs Quality Risk",
-        labels={
+    scatter_kwargs = {
+        "data_frame": corr_plot_df,
+        "x": "Avg Staffing HPRD",
+        "y": "Quality risk score",
+        "title": "Staffing vs Quality Risk",
+        "labels": {
             "Avg Staffing HPRD": "Staffing (HPRD)",
             "Quality risk score": "Quality Risk Score",
             "Correlation category": "Correlation Category"
         }
+    }
+
+    if "Correlation category" in corr_plot_df.columns:
+        scatter_kwargs["color"] = "Correlation category"
+    if "Avg Occupancy rate" in corr_plot_df.columns:
+        scatter_kwargs["size"] = "Avg Occupancy rate"
+    if has_columns(corr_plot_df, ["Provider name", "State"]):
+        scatter_kwargs["hover_data"] = ["Provider name", "State"]
+
+    fig = px.scatter(
+        **scatter_kwargs
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -318,7 +442,7 @@ st.subheader("Operational Metrics")
 
 col1, col2 = st.columns(2)
 
-if "Contract staff ratio" in staffing_df.columns:
+if has_columns(staffing_df, ["Provider name", "State", "Contract staff ratio"]):
     top_contract = (
         staffing_df
         .dropna(subset=["Contract staff ratio"])
@@ -341,7 +465,7 @@ if "Contract staff ratio" in staffing_df.columns:
     )
     col1.plotly_chart(fig, use_container_width=True)
 
-if "Understaffing pressure score" in staffing_df.columns:
+if has_columns(staffing_df, ["Provider name", "State", "Understaffing pressure score"]):
     pressure_df = (
         staffing_df
         .dropna(subset=["Understaffing pressure score"])

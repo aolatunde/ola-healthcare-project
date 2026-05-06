@@ -1,8 +1,0 @@
-streamlit
-pandas
-plotly
-deltalake
-s3fs
-pyarrow
-boto3
-python-dotenv
