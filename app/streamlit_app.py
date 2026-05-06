@@ -70,11 +70,12 @@ def build_storage_options():
         options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
     if AWS_SESSION_TOKEN:
         options["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
-    if AWS_REGION:
-        options["AWS_REGION"] = AWS_REGION
-        options["AWS_DEFAULT_REGION"] = AWS_REGION
 
-    return options if options else None
+    options["AWS_REGION"] = AWS_REGION or "us-east-1"
+    options["AWS_DEFAULT_REGION"] = AWS_REGION or "us-east-1"
+    options["AWS_ENDPOINT_URL"] = "https://s3.us-east-1.amazonaws.com"
+
+    return options
 
 
 missing_paths = [
