@@ -47,13 +47,14 @@ STAFFING_PATH = get_config("STAFFING_PATH")
 QUALITY_PATH = get_config("QUALITY_PATH")
 CORR_PATH = get_config("CORR_PATH")
 
-import os
-
-os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
-
 AWS_ACCESS_KEY_ID = get_config("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
+AWS_SESSION_TOKEN = get_config("AWS_SESSION_TOKEN")
 AWS_REGION = get_config("AWS_REGION") or get_config("AWS_DEFAULT_REGION") or "us-east-1"
+
+os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
+os.environ["AWS_REGION"] = AWS_REGION
+os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
 
 if AWS_ACCESS_KEY_ID:
     os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
@@ -61,14 +62,9 @@ if AWS_ACCESS_KEY_ID:
 if AWS_SECRET_ACCESS_KEY:
     os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
 
-os.environ["AWS_REGION"] = AWS_REGION
-os.environ["AWS_DEFAULT_REGION"] = AWS_REGION
+if AWS_SESSION_TOKEN:
+    os.environ["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
 
-
-st.write("AWS key loaded:", bool(AWS_ACCESS_KEY_ID))
-st.write("AWS secret loaded:", bool(AWS_SECRET_ACCESS_KEY))
-st.write("AWS region:", AWS_REGION)
-st.write("Staffing path:", STAFFING_PATH)
 
 def build_storage_options():
     if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
@@ -76,15 +72,14 @@ def build_storage_options():
         st.stop()
 
     return {
-        "aws_access_key_id": AWS_ACCESS_KEY_ID,
-        "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
-        "region": AWS_REGION,
+        "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+        "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+        "AWS_SESSION_TOKEN": AWS_SESSION_TOKEN or "",
         "AWS_REGION": AWS_REGION,
         "AWS_DEFAULT_REGION": AWS_REGION,
         "AWS_EC2_METADATA_DISABLED": "true",
-        "allow_http": "false"
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true"
     }
-
 
 missing_paths = [
     name
@@ -120,16 +115,8 @@ os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
 
 @st.cache_data(show_spinner="Loading Delta table...")
 def load_delta(path, storage_options=None):
-    if not path:
-        st.error("Missing Delta table path. Check Streamlit secrets or .env configuration.")
-        st.stop()
-
     try:
-        if path.startswith("s3://") and storage_options:
-            return DeltaTable(path, storage_options=storage_options).to_pandas()
-
-        return DeltaTable(path).to_pandas()
-
+        return DeltaTable(path, storage_options=storage_options).to_pandas()
     except Exception as e:
         st.error(f"Failed to load Delta table from: {path}")
         st.exception(e)
