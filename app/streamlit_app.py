@@ -62,18 +62,25 @@ if AWS_SESSION_TOKEN:
 
 
 def build_storage_options():
-    options = {}
+    options = {
+        "region": AWS_REGION or "us-east-1",
+        "AWS_REGION": AWS_REGION or "us-east-1",
+        "AWS_DEFAULT_REGION": AWS_REGION or "us-east-1",
+        "aws_region": AWS_REGION or "us-east-1",
+        "AWS_EC2_METADATA_DISABLED": "true",
+    }
 
     if AWS_ACCESS_KEY_ID:
+        options["aws_access_key_id"] = AWS_ACCESS_KEY_ID
         options["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
-    if AWS_SECRET_ACCESS_KEY:
-        options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
-    if AWS_SESSION_TOKEN:
-        options["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
 
-    options["AWS_REGION"] = AWS_REGION or "us-east-1"
-    options["AWS_DEFAULT_REGION"] = AWS_REGION or "us-east-1"
-    options["AWS_ENDPOINT_URL"] = "https://s3.us-east-1.amazonaws.com"
+    if AWS_SECRET_ACCESS_KEY:
+        options["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
+        options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
+
+    if AWS_SESSION_TOKEN:
+        options["aws_session_token"] = AWS_SESSION_TOKEN
+        options["AWS_SESSION_TOKEN"] = AWS_SESSION_TOKEN
 
     return options
 
@@ -106,6 +113,8 @@ if missing_paths:
         language="toml",
     )
     st.stop()
+
+os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
 
 
 @st.cache_data(show_spinner="Loading Delta table...")
