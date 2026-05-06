@@ -15,9 +15,21 @@ st.title("Healthcare Staffing & Quality Dashboard")
 
 load_dotenv()
 
-STAFFING_PATH = os.getenv("STAFFING_PATH")
-QUALITY_PATH = os.getenv("QUALITY_PATH")
-CORR_PATH = os.getenv("CORR_PATH")
+def get_config(name):
+    return os.getenv(name) or st.secrets.get(name)
+
+STAFFING_PATH = get_config("STAFFING_PATH")
+QUALITY_PATH = get_config("QUALITY_PATH")
+CORR_PATH = get_config("CORR_PATH")
+
+AWS_ACCESS_KEY_ID = get_config("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = get_config("AWS_SECRET_ACCESS_KEY")
+AWS_DEFAULT_REGION = get_config("AWS_DEFAULT_REGION") or "us-east-1"
+
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+    os.environ["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY_ID
+    os.environ["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_ACCESS_KEY
+    os.environ["AWS_DEFAULT_REGION"] = AWS_DEFAULT_REGION
 
 
 @st.cache_data
